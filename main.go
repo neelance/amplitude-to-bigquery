@@ -26,7 +26,7 @@ func main() {
 	}
 	table := bigqueryClient.Dataset(getenv("BIGQUERY_DATASET")).Table(getenv("BIGQUERY_TABLE"))
 
-	start := time.Now().Add(-time.Hour * 24 * 40)
+	start := time.Now().Add(-time.Hour * 24)
 	end := time.Now()
 
 	url := fmt.Sprintf("https://amplitude.com/api/2/export?start=%s&end=%s", start.Format("20060102T15"), end.Format("20060102T15"))
@@ -44,8 +44,9 @@ func main() {
 		Schema: bigquery.Schema{
 			&bigquery.FieldSchema{Name: "event_time", Type: bigquery.TimestampFieldType, Required: true},
 			&bigquery.FieldSchema{Name: "event_type", Type: bigquery.StringFieldType, Required: true},
+			&bigquery.FieldSchema{Name: "user_id", Type: bigquery.StringFieldType, Required: true},
 			&bigquery.FieldSchema{Name: "event_properties", Type: bigquery.StringFieldType, Required: true},
-			&bigquery.FieldSchema{Name: "user_id", Type: bigquery.StringFieldType},
+			&bigquery.FieldSchema{Name: "user_properties", Type: bigquery.StringFieldType, Required: true},
 		},
 	}); err != nil {
 		log.Fatal(err)
@@ -102,11 +103,16 @@ func main() {
 					log.Fatal(err)
 				}
 
+				if event.UserID == "" {
+					continue
+				}
+
 				if err := enc.Write([]string{
 					event.EventTime,
 					event.EventType,
-					string(event.EventProperties),
 					event.UserID,
+					string(event.EventProperties),
+					string(event.UserProperties),
 				}); err != nil {
 					log.Fatal(err)
 				}
