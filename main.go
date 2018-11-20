@@ -26,7 +26,7 @@ func main() {
 	}
 	table := bigqueryClient.Dataset(getenv("BIGQUERY_DATASET")).Table(getenv("BIGQUERY_TABLE"))
 
-	start := time.Now().Add(-time.Hour * 24)
+	start := time.Now().Add(-time.Hour * 24 * 40)
 	end := time.Now()
 
 	url := fmt.Sprintf("https://amplitude.com/api/2/export?start=%s&end=%s", start.Format("20060102T15"), end.Format("20060102T15"))
