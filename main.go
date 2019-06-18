@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -26,7 +27,14 @@ func main() {
 	}
 	table := bigqueryClient.Dataset(getenv("BIGQUERY_DATASET")).Table(getenv("BIGQUERY_TABLE"))
 
-	start := time.Now().Add(-time.Hour * 24 * 40)
+	days := 40
+	if v := os.Getenv("DAYS"); v != "" {
+		days, err = strconv.Atoi(v)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	start := time.Now().Add(-time.Hour * 24 * time.Duration(days))
 	end := time.Now()
 
 	url := fmt.Sprintf("https://amplitude.com/api/2/export?start=%s&end=%s", start.Format("20060102T15"), end.Format("20060102T15"))
