@@ -37,13 +37,6 @@ func main() {
 	start := time.Now().Add(-time.Hour * 24 * time.Duration(days))
 	end := time.Now()
 
-	url := fmt.Sprintf("https://amplitude.com/api/2/export?start=%s&end=%s", start.Format("20060102T15"), end.Format("20060102T15"))
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	req.SetBasicAuth(getenv("AMPLITUDE_API_KEY"), getenv("AMPLITUDE_SECRET_KEY"))
-
 	log.Println("Deleting table...")
 	table.Delete(ctx)
 
@@ -60,73 +53,83 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("Downloading events...")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Fatal(resp.Status)
-	}
-
-	log.Printf("Export size: %d MiB\n", resp.ContentLength/1024/1024)
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	r, err := zip.NewReader(bytes.NewReader(data), resp.ContentLength)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	pr, pw := io.Pipe()
+	enc := csv.NewWriter(pw)
 	go func() {
-		enc := csv.NewWriter(pw)
+		for current := start; !current.After(end); current = current.Add(24 * time.Hour) {
+			fmt.Printf("Downloading %s...\n", start.Format("2006-01-02"))
 
-		for _, f := range r.File {
-			log.Printf("Uploading %s...\n", f.Name)
+			day := start.Format("20060102")
+			url := fmt.Sprintf("https://amplitude.com/api/2/export?start=%sT00&end=%sT23", day, day)
+			req, err := http.NewRequest("GET", url, nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+			req.SetBasicAuth(getenv("AMPLITUDE_API_KEY"), getenv("AMPLITUDE_SECRET_KEY"))
 
-			fr, err := f.Open()
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				log.Fatal(resp.Status)
+			}
+
+			log.Printf("Export size: %d MiB\n", resp.ContentLength/1024/1024)
+			data, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			gr, err := gzip.NewReader(fr)
+			r, err := zip.NewReader(bytes.NewReader(data), resp.ContentLength)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			dec := json.NewDecoder(gr)
-			dec.DisallowUnknownFields()
+			for _, f := range r.File {
+				log.Printf("Uploading %s...\n", f.Name)
 
-			for {
-				var event RawEvent
-				if err := dec.Decode(&event); err != nil {
-					if err == io.EOF {
-						break
+				fr, err := f.Open()
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				gr, err := gzip.NewReader(fr)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				dec := json.NewDecoder(gr)
+				dec.DisallowUnknownFields()
+
+				for {
+					var event RawEvent
+					if err := dec.Decode(&event); err != nil {
+						if err == io.EOF {
+							break
+						}
+						log.Fatal(err)
 					}
-					log.Fatal(err)
+
+					if event.UserID == "" {
+						continue
+					}
+
+					if err := enc.Write([]string{
+						event.EventTime,
+						event.EventType,
+						event.UserID,
+						string(event.EventProperties),
+						string(event.UserProperties),
+					}); err != nil {
+						log.Fatal(err)
+					}
 				}
 
-				if event.UserID == "" {
-					continue
-				}
-
-				if err := enc.Write([]string{
-					event.EventTime,
-					event.EventType,
-					event.UserID,
-					string(event.EventProperties),
-					string(event.UserProperties),
-				}); err != nil {
-					log.Fatal(err)
-				}
+				fr.Close()
 			}
-
-			fr.Close()
 		}
 
 		enc.Flush()
