@@ -57,9 +57,9 @@ func main() {
 	enc := csv.NewWriter(pw)
 	go func() {
 		for current := start; !current.After(end); current = current.Add(24 * time.Hour) {
-			fmt.Printf("Downloading %s...\n", start.Format("2006-01-02"))
+			log.Printf("Downloading %s...\n", current.Format("2006-01-02"))
 
-			day := start.Format("20060102")
+			day := current.Format("20060102")
 			url := fmt.Sprintf("https://amplitude.com/api/2/export?start=%sT00&end=%sT23", day, day)
 			req, err := http.NewRequest("GET", url, nil)
 			if err != nil {
