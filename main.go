@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -54,85 +55,24 @@ func main() {
 	}
 
 	pr, pw := io.Pipe()
-	enc := csv.NewWriter(pw)
+	w := csv.NewWriter(pw)
 	go func() {
 		for current := start; !current.After(end); current = current.Add(24 * time.Hour) {
-			log.Printf("Downloading %s...\n", current.Format("2006-01-02"))
-
-			day := current.Format("20060102")
-			url := fmt.Sprintf("https://amplitude.com/api/2/export?start=%sT00&end=%sT23", day, day)
-			req, err := http.NewRequest("GET", url, nil)
-			if err != nil {
-				log.Fatal(err)
-			}
-			req.SetBasicAuth(getenv("AMPLITUDE_API_KEY"), getenv("AMPLITUDE_SECRET_KEY"))
-
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				log.Fatal(resp.Status)
-			}
-
-			log.Printf("Export size: %d MiB\n", resp.ContentLength/1024/1024)
-			data, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			r, err := zip.NewReader(bytes.NewReader(data), resp.ContentLength)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			for _, f := range r.File {
-				log.Printf("Uploading %s...\n", f.Name)
-
-				fr, err := f.Open()
-				if err != nil {
-					log.Fatal(err)
+			retry := 0
+			for {
+				err := downloadFile(current, w)
+				if err == nil {
+					break
 				}
-
-				gr, err := gzip.NewReader(fr)
-				if err != nil {
-					log.Fatal(err)
+				retry++
+				log.Printf("Error: %s\n", err)
+				if retry == 3 {
+					log.Fatal("Too many retries. Exiting.")
 				}
-
-				dec := json.NewDecoder(gr)
-				dec.DisallowUnknownFields()
-
-				for {
-					var event RawEvent
-					if err := dec.Decode(&event); err != nil {
-						if err == io.EOF {
-							break
-						}
-						log.Fatal(err)
-					}
-
-					if event.UserID == "" {
-						continue
-					}
-
-					if err := enc.Write([]string{
-						event.EventTime,
-						event.EventType,
-						event.UserID,
-						string(event.EventProperties),
-						string(event.UserProperties),
-					}); err != nil {
-						log.Fatal(err)
-					}
-				}
-
-				fr.Close()
 			}
 		}
 
-		enc.Flush()
+		w.Flush()
 		pw.Close()
 	}()
 
@@ -141,6 +81,90 @@ func main() {
 	}
 
 	log.Println("Done.")
+}
+
+func downloadFile(current time.Time, w *csv.Writer) error {
+	log.Printf("Downloading %s...\n", current.Format("2006-01-02"))
+
+	day := current.Format("20060102")
+	url := fmt.Sprintf("https://amplitude.com/api/2/export?start=%sT00&end=%sT23", day, day)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(getenv("AMPLITUDE_API_KEY"), getenv("AMPLITUDE_SECRET_KEY"))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Fatal(resp.Status)
+	}
+
+	log.Printf("Export size: %d MiB\n", resp.ContentLength/1024/1024)
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	r, err := zip.NewReader(bytes.NewReader(data), resp.ContentLength)
+	if err != nil {
+		return err
+	}
+
+	for _, f := range r.File {
+		if !strings.HasSuffix(f.Name, ".json.gz") {
+			return fmt.Errorf("got bad file: %s", f.Name)
+		}
+	}
+
+	for _, f := range r.File {
+		log.Printf("Uploading %s...\n", f.Name)
+
+		fr, err := f.Open()
+		if err != nil {
+			return err
+		}
+
+		gr, err := gzip.NewReader(fr)
+		if err != nil {
+			return err
+		}
+
+		dec := json.NewDecoder(gr)
+		dec.DisallowUnknownFields()
+
+		for {
+			var event RawEvent
+			if err := dec.Decode(&event); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+			if event.UserID == "" {
+				continue
+			}
+
+			if err := w.Write([]string{
+				event.EventTime,
+				event.EventType,
+				event.UserID,
+				string(event.EventProperties),
+				string(event.UserProperties),
+			}); err != nil {
+				return err
+			}
+		}
+
+		fr.Close()
+	}
+
+	return nil
 }
 
 type RawEvent struct {
