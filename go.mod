@@ -1,4 +1,4 @@
-module amplitude-to-bigquery
+module github.com/neelance/amplitude-to-bigquery
 
 require (
 	cloud.google.com/go v0.32.0
