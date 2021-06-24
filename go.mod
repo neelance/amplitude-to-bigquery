@@ -1,16 +1,12 @@
 module github.com/neelance/amplitude-to-bigquery
 
 require (
-	cloud.google.com/go v0.32.0
-	contrib.go.opencensus.io/exporter/stackdriver v0.6.0 // indirect
-	github.com/google/go-cmp v0.2.0 // indirect
-	github.com/google/martian v2.1.0+incompatible // indirect
-	github.com/googleapis/gax-go v2.0.0+incompatible // indirect
-	go.opencensus.io v0.17.0 // indirect
-	golang.org/x/net v0.0.0-20180921000356-2f5d2388922f // indirect
-	google.golang.org/api v0.0.0-20180921000521-920bb1beccf7 // indirect
-	google.golang.org/genproto v0.0.0-20180918203901-c3f76f3b92d1 // indirect
-	google.golang.org/grpc v1.15.0 // indirect
+	cloud.google.com/go/bigquery v1.18.0
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	golang.org/x/net v0.0.0-20210614182718-04defd469f4e // indirect
+	golang.org/x/oauth2 v0.0.0-20210622215436-a8dc77f794b6 // indirect
+	golang.org/x/tools v0.1.4 // indirect
+	google.golang.org/api v0.49.0 // indirect
 )
 
 go 1.13
